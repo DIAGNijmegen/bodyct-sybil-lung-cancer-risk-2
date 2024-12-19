@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import pydicom
 import torchio as tio
-
+import os
 
 from sybil.datasets.utils import order_slices, VOXEL_SPACING
 from sybil.utils2.loading import get_sample_loader
@@ -32,10 +32,11 @@ class Serie:
     def __init__(
         self,
         dicoms: List[str],
+        mha3d: bool = False,
         voxel_spacing: Optional[List[float]] = None,
         label: Optional[int] = None,
         censor_time: Optional[int] = None,
-        #file_type: Literal["mha", "dicom"] = "dicom",
+        # file_type: Literal["mha", "dicom"] = "dicom",
         file_type: Literal["mha", "dicom"] = "mha",
         split: Literal["train", "dev", "test"] = "test",
     ):
@@ -62,7 +63,7 @@ class Serie:
         """
         if label is not None and censor_time is None:
             raise ValueError("censor_time should also provided with label.")
-
+        self.mha3d = mha3d
         self._censor_time = censor_time
         self._label = label
         args = self._load_args(file_type)
@@ -73,6 +74,38 @@ class Serie:
         self.padding_transform = tio.transforms.CropOrPad(
             target_shape=tuple(args.img_size + [args.num_images]), padding_mode=0
         )
+        
+    
+    def break_mha_into_slices(self, input_mha_file):
+        sitk_image = sitk.ReadImage(input_mha_file)
+        ct_slices = sitk.GetArrayFromImage(sitk_image)
+        # print(np.shape(ct_slices))
+        spacing = sitk_image.GetSpacing()
+        seriesuid, _ = os.path.splitext(os.path.basename(input_mha_file))
+        slices = []
+        # if not os.path.exists(output_folder):
+        #     os.makedirs(output_folder)
+
+        for i, slice_data in enumerate(ct_slices):
+            slice_image = sitk.GetImageFromArray(slice_data)
+            slice_image.SetOrigin(sitk_image.GetOrigin())
+            slice_image.SetMetaData("SeriesUID", seriesuid)
+
+            x_coordinate = slice_image.GetOrigin()[0]
+            y_coordinate = slice_image.GetOrigin()[1]
+
+            slice_image.SetMetaData("ImagePositionPatient", f"{x_coordinate} {y_coordinate}")
+            
+            if isinstance(spacing, tuple) and len(spacing) >= 3:
+                slice_thickness = spacing[2]
+            else:
+                slice_thickness = None
+            slice_image.SetMetaData("SliceThickness", str(slice_thickness))
+            pixel_spacing_str = " ".join(map(str, spacing))
+            slice_image.SetMetaData("PixelSpacing", pixel_spacing_str)
+            slices.append(slice_image)
+
+        return slices
 
     def has_label(self) -> bool:
         """Check if there is a label associated with this serie.
@@ -134,9 +167,12 @@ class Serie:
 
         sample = {"seed": np.random.randint(0, 2**32 - 1)}
     
+        # mha 3d
+        if self.mha3d:
+            input_dicts = [self._loader.get_image3d(self._meta.paths[0],sample, image) for image in self.break_mha_into_slices(self._meta.paths)]
+        else:
+            input_dicts = [self._loader.get_image(path, sample) for path in self._meta.paths]
 
-        input_dicts = [self._loader.get_image(path, sample) for path in self._meta.paths]
-        
         x = torch.cat( [i["input"].unsqueeze(0) for i in input_dicts], dim = 0)
         #x = torch.cat([torch.from_numpy(i["input"]).unsqueeze(0) for i in input_dicts], dim = 0)
         #x = x.unsqueeze(0)
@@ -208,28 +244,47 @@ class Serie:
 
         # Check if filetype is mha
         elif file_type == "mha":
-            processed_paths = paths
-            slice_positions = list(range(len(paths)))
+            if not self.mha3d:
+                processed_paths = paths
+                slice_positions = list(range(len(paths)))
+                
+                for path in paths:
+                    itk_image = sitk.ReadImage(str(path), sitk.sitkFloat64)
+                    
 
-            for path in paths:
-                itk_image = sitk.ReadImage(str(path), sitk.sitkFloat64)
+                thickness = (float(itk_image.GetMetaData("SliceThickness")))
+                pixelspacingstring = itk_image.GetMetaData("PixelSpacing")
+                pixel_spacing = list(map(float, pixelspacingstring.split()))
+                manufacturer = ""
+                voxel_spacing = torch.tensor(pixel_spacing + [thickness])
+                meta = Meta(
+                    paths = processed_paths,
+                    thickness=thickness,
+                    pixel_spacing=pixel_spacing,
+                    manufacturer=manufacturer,
+                    slice_positions=slice_positions,
+                    voxel_spacing=voxel_spacing
+                )
+            else:
+            # mha 3d
+                itk_image = sitk.ReadImage(paths[0], sitk.sitkFloat64)
+                ar = np.shape(sitk.GetArrayFromImage(itk_image))
+                slice_positions = list(range(ar[0]))
 
+                itk_image = self.break_mha_into_slices(paths[0])[0]
+                thickness = (float(itk_image.GetMetaData("SliceThickness")))
+                pixelspacingstring = itk_image.GetMetaData("PixelSpacing")
+                pixel_spacing = list(map(float, pixelspacingstring.split()))
+                manufacturer = ""
+                voxel_spacing = torch.tensor(pixel_spacing + [thickness])
+                meta = Meta(
+                    paths=paths[0],
+                    thickness=thickness,
+                    pixel_spacing=pixel_spacing,
+                    manufacturer=manufacturer,
+                    slice_positions=slice_positions,
+                    voxel_spacing=voxel_spacing)
 
-            thickness = (float(itk_image.GetMetaData("SliceThickness")))
-            pixelspacingstring = itk_image.GetMetaData("PixelSpacing")
-            pixel_spacing = list(map(float, pixelspacingstring.split()))
-            manufacturer = ""
-            voxel_spacing = torch.tensor(pixel_spacing + [thickness])
-
-            
-        meta = Meta(
-            paths=processed_paths,
-            thickness=thickness,
-            pixel_spacing=pixel_spacing,
-            manufacturer=manufacturer,
-            slice_positions=slice_positions,
-            voxel_spacing=voxel_spacing,
-        )
         return meta
 
     def _load_args(self, file_type):

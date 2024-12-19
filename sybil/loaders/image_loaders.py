@@ -9,8 +9,18 @@ import SimpleITK as sitk
 LOADING_ERROR = "LOADING ERROR! {}"
 
 class SimpleITKLoader(abstract_loader):
+    # mha 3d
+    def load_input3d(self, image):
+        """
+        Loads MHA file as grayscale image
+        """
+        # image = sitk.ReadImage(path)
+        ar = sitk.GetArrayFromImage(image).astype(np.float64)
+        arr = apply_windowing(ar, -600, 1500)
+        arr = arr//256
+        return {"input": arr}
 
-    def load_input(self, path, sample):
+    def load_input(self, path):
         """
         Loads MHA file as grayscale image
         """
@@ -28,7 +38,7 @@ class DicomLoader(abstract_loader):
         super(DicomLoader, self).__init__(cache_path, augmentations, args)
         self.window_center = -600
         self.window_width = 1500
-
+    
     def load_input(self, path, sample):
         try:
             dcm = pydicom.dcmread(path)
