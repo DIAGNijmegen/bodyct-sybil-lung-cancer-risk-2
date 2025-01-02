@@ -8,7 +8,7 @@ from torch.utils import data
 
 from sybil.utils.sampler import DistributedWeightedSampler
 from sybil.augmentations import get_augmentations
-from sybil.loaders.image_loaders import OpenCVLoader, DicomLoader
+from sybil.loaders.image_loaders import OpenCVLoader, DicomLoader, SimpleITKLoader
 
 string_classes = (str, bytes)
 int_classes = int
@@ -188,5 +188,7 @@ def get_sample_loader(
         return DicomLoader(args.cache_path, augmentations, args, apply_augmentations)
     elif args.img_file_type == "png":
         return OpenCVLoader(args.cache_path, augmentations, args, apply_augmentations)
+    elif args.img_file_type == "mha":
+        return SimpleITKLoader(args.cache_path, augmentations, args)
     else:
         raise NotImplementedError
