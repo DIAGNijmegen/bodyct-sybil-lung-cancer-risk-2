@@ -83,7 +83,6 @@ class Serie:
     def break_mha_into_slices(self, input_mha_file):
         sitk_image = sitk.ReadImage(input_mha_file)
         ct_slices = sitk.GetArrayFromImage(sitk_image)
-        # print(np.shape(ct_slices))
         spacing = sitk_image.GetSpacing()
         seriesuid, _ = os.path.splitext(os.path.basename(input_mha_file))
         slices = []
@@ -191,6 +190,7 @@ class Serie:
                 input_dicts = [self._loader.get_image3d(self._meta.paths[0],sample, image) for image in self.break_mha_into_slices(self._meta.paths)]
             else:
                 input_dicts = [self._loader.get_image(path, sample) for path in self._meta.paths]
+                
         elif self.file_type == 'dicom':
             input_dicts = [
                 self._loader.get_image(path) for path in self._meta.paths
@@ -258,6 +258,7 @@ class Serie:
         # Check if filetype is mha
         elif file_type == "mha":
             if not self.mha3d:
+                paths = paths[0]
                 processed_paths = paths
                 slice_positions = list(range(len(paths)))
                 

@@ -4,6 +4,8 @@ import csv
 import pandas as pd
 import argparse
 from tqdm import tqdm
+import traceback
+import time
 
 """
 This script is used to run inference on a set of 3d .mha files and save the results to a csv file.
@@ -11,9 +13,11 @@ This script is used to run inference on a set of 3d .mha files and save the resu
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Run inference on a set of .mha files and save the results to a CSV file.')
-    parser.add_argument('--parent-directory', type=str, required=True, help='Path to the parent directory containing folder with seriesuid and inside .mha frames')
+    parser.add_argument('--parent-directory', type=str, required=True, help='Path to the parent directory containing .mha files')
+    parser.add_argument('--mha-3d', type=bool, required=False, default=True, help = 'When inputting .mha files: True if the files are 3D, False for .mha slices ')
     parser.add_argument('--overview-csv', type=str, required=False, help='Path to the CSV file containing seriesinstenceuid')
     parser.add_argument('--output-csv', type=str, required=True, help='Path to the output CSV file')
+    parser.add_argument('--log-file',type=str, required=True, help='Path to the output log file')
     return parser.parse_args()
 
 args = parse_arguments()
@@ -21,17 +25,20 @@ args = parse_arguments()
 ParentDirectory = args.parent_directory
 myoverview = args.overview_csv
 csvoutput = args.output_csv
+log_file = args.log_file
+mha3d = args.mha_3d
 
-# def get_subfolder_paths(parent_folder):
-#     """Return a list of all subfolder paths in a parent folder.
-#     Parameters:
-#     parent_folder (str): The path to the parent folder.
-#     Returns:s
-#     List[str]: A list of paths for all subfolders in the parent folder.
-#     """
-#     subfolder_names = os.listdir(parent_folder)
-#     subfolder_paths = [os.path.join(parent_folder, name) for name in subfolder_names if os.path.isdir(os.path.join(parent_folder, name))]
-#     return subfolder_paths
+start_time_model = time.time()
+def get_subfolder_paths(parent_folder):
+    """Return a list of all subfolder paths in a parent folder.
+    Parameters:
+    parent_folder (str): The path to the parent folder.
+    Returns:s
+    List[str]: A list of paths for all subfolders in the parent folder.
+    """
+    subfolder_names = os.listdir(parent_folder)
+    subfolder_paths = [os.path.join(parent_folder, name) for name in subfolder_names if os.path.isdir(os.path.join(parent_folder, name))]
+    return subfolder_paths
 
 def get_mha_paths_from_csv(csv_file_path,path_to_mha):
     """Return a list of all mha file paths extracted from a CSV file.
@@ -99,32 +106,33 @@ def save_data_as_csv(data_dict, output_filename):
         for series_key, series_value in data_dict.items():
             writer.writerow(series_value)
 
-# def log_error(error_message, subfolder):
-#     with open(log_file, "a") as log:
-#         log.write("Error in subfolder '{}': {}\n".format(subfolder, error_message))
-#         traceback.print_exc(file=log)
+def log_error(error_message, subfolder):
+    with open(log_file, "a") as log:
+        log.write("Error in subfolder '{}': {}\n".format(subfolder, error_message))
+        traceback.print_exc(file=log)
 
 if myoverview:
     scans = get_mha_paths_from_csv(myoverview,ParentDirectory)
-else:
+elif mha3d:
     scans = get_mha_filepaths(ParentDirectory)
+else:
+    subfolders = get_subfolder_paths(ParentDirectory)
+    scans = [get_mha_filepaths(i) for i in subfolders]
 
 headers = ["SeriesInstanceUID", "year1", "year2", "year3", "year4", "year5", "year6"]
 
-print("loading")
 model = Sybil("sybil_ensemble")
 
 for scan in tqdm(scans):
     try:
-        serie = Serie([scan], mha3d=True)
+        serie = Serie([scan], mha3d=mha3d)
         scores = model.predict([serie])
         data_dict = collectscores(scan, scores[0])
         save_data_as_csv(data_dict, csvoutput)
-        # print(scores)
     except Exception as e:
-        # log_error(str(e), subfolder)
-        print(e)
-
+        log_error(str(e), scan)
+end_time_model = time.time()
+print(f"Time taken: {end_time_model - start_time_model} seconds")
 
 
 

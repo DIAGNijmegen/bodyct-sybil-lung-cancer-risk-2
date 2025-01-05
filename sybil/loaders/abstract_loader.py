@@ -231,7 +231,6 @@ class abstract_loader:
         """
         input_dict = {}
         input_path = self.configure_path(path, sample)
-        # x = self.mha_to_np(path)
 
         if input_path == self.pad_token:
             return self.load_input(input_path)
