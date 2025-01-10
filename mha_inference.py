@@ -79,7 +79,7 @@ def collectscores(seriesuid, scores):
 
     keys = ['SeriesInstanceUID', 'year1', 'year2', 'year3', 'year4', 'year5', 'year6']
     values = [
-        os.path.basename(seriesuid),
+        os.path.basename(seriesuid).removesuffix('.mha'),
         scores[0][0],
         scores[0][1],
         scores[0][2],
