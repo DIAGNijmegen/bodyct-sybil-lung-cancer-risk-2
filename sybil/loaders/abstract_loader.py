@@ -1,4 +1,3 @@
-import torch
 import os
 import sys
 import os.path
@@ -9,8 +8,7 @@ import numpy as np
 from abc import ABCMeta, abstractmethod
 import hashlib
 
-
-CACHED_FILES_EXT = ".png"
+CACHED_FILES_EXT = ".mha"
 DEFAULT_CACHE_DIR = "default/"
 
 CORUPTED_FILE_ERR = (
@@ -148,6 +146,10 @@ class abstract_loader:
     def load_input(self, path):
         pass
 
+    @abstractmethod
+    def load_input3d(self,image):
+        pass
+
     @property
     @abstractmethod
     def cached_extension(self):
@@ -156,6 +158,71 @@ class abstract_loader:
     def configure_path(self, path, sample=None):
         return path
 
+    ## mha 3d
+    def get_image3d(self, path, sample, image):
+        """
+        Returns a transformed image by its absolute path.
+        If cache is used - transformed image will be loaded if available,
+        and saved to cache if not.
+        """
+        input_dict = {}
+        input_path = self.configure_path(path, sample)
+        # mha 3d
+        if input_path == self.pad_token:
+            return self.load_input3d(image)
+
+        if not self.use_cache:
+            input_dict = self.load_input3d(image)
+            # hidden loaders typically do not use augmentation
+            if self.apply_augmentations:
+                input_dict = self.composed_all_augmentations(input_dict, sample)
+            return input_dict
+
+        if self.args.use_annotations:
+            input_dict["mask"] = get_scaled_annotation_mask(
+                sample["annotations"], self.args
+            )
+
+        for key, post_augmentations in self.split_augmentations:
+            base_key = (
+                DEFAULT_CACHE_DIR + key
+                if key != DEFAULT_CACHE_DIR
+                else DEFAULT_CACHE_DIR
+            )
+            if self.cache.exists(input_path, base_key):
+                try:
+                    input_dict["input"] = self.cache.get(input_path, base_key)
+                    if self.apply_augmentations:
+                        input_dict = apply_augmentations_and_cache(
+                            input_dict,
+                            sample,
+                            input_path,
+                            post_augmentations,
+                            self.cache,
+                            base_key=base_key,
+                        )
+                    return input_dict
+                except Exception as e:
+                    print(e)
+                    hashed_key = md5(input_path)
+                    par_dir = self.cache._parent_dir(input_path)
+                    corrupted_file = self.cache._file_path(key, par_dir, hashed_key)
+                    warnings.warn(CORUPTED_FILE_ERR.format(sys.exc_info()[0]))
+                    self.cache.rem(input_path, key)
+        all_augmentations = self.split_augmentations[-1][1]
+        input_dict = self.load_input3d(image)
+        if self.apply_augmentations:
+            input_dict = apply_augmentations_and_cache(
+                input_dict,
+                sample,
+                input_path,
+                all_augmentations,
+                self.cache,
+                base_key=key,
+            )
+
+        return input_dict
+    
     def get_image(self, path, sample=None):
         """
         Returns a transformed image by its absolute path.

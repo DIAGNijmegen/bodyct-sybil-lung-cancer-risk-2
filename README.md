@@ -38,6 +38,35 @@ Models available include: `sybil_1`, `sybil_2`, `sybil_3`, `sybil_4`, `sybil_5` 
 
 All model files are available on [GitHub releases](https://github.com/reginabarzilaygroup/Sybil/releases) as well as [here](https://drive.google.com/drive/folders/1nBp05VV9mf5CfEO6W5RY4ZpcpxmPDEeR?usp=sharing).
 
+# Run the mha implementation of the model 
+You can load pretrained model trained on the NLST dataset, and score a given 3D MHA file as follows:
+
+```python
+from sybil import Serie, Sybil
+
+# Load a trained model
+model = Sybil("sybil_ensemble")
+
+# Get risk scores
+serie = Serie([mha_path], mha3d=False)
+scores = model.predict([serie])
+```
+The "mha3d" parameter is set to "True" signifying that the mha input is a 3 dimentional.
+
+Inference on 2D MHA slices is also possible. It can be conducted by setting the "mha3d" parameter to "False" as in the following:
+
+```python
+from sybil import Serie, Sybil
+
+# Load a trained model
+model = Sybil("sybil_ensemble")
+
+# Get risk scores
+serie = Serie([mha_path_1,mha_path_2,...],mha3d=False)
+scores = model.predict([serie])
+```
+
+
 # Replicating results
 
 You can replicate the results from our model using our training script:
