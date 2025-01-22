@@ -4,6 +4,7 @@ import os
 from typing import NamedTuple, Union, Dict, List, Optional, Tuple
 from urllib.request import urlopen
 from zipfile import ZipFile
+
 # import gdown
 
 import torch
@@ -13,7 +14,6 @@ import pickle
 from sybil.serie import Serie
 from sybil.models.sybil import SybilNet
 from sybil.utils.metrics import get_survival_metrics
-
 
 # Leaving this here for a bit; these are IDs to download the models from Google Drive
 NAME_TO_FILE = {
@@ -364,9 +364,9 @@ class Sybil:
             for i in range(len(series)):
                 att = {}
                 for key in attention_keys:
-                    att[key] = np.stack([
-                        attentions_[j][i][key] for j in range(len(self.ensemble))
-                    ])
+                    att[key] = np.stack(
+                        [attentions_[j][i][key] for j in range(len(self.ensemble))]
+                    )
                 attentions.append(att)
 
         return Prediction(scores=calib_scores, attentions=attentions)
@@ -418,4 +418,6 @@ class Sybil:
         auc = [float(out[f"{i + 1}_year_auc"]) for i in range(self._max_followup)]
         c_index = float(out["c_index"])
 
-        return Evaluation(auc=auc, c_index=c_index, scores=scores, attentions=predictions.attentions)
+        return Evaluation(
+            auc=auc, c_index=c_index, scores=scores, attentions=predictions.attentions
+        )

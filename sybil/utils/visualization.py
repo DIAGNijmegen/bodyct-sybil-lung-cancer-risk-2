@@ -12,6 +12,7 @@ def visualize_attentions(
     attentions: List[Dict[str, np.ndarray]],
     save_directory: str = None,
     gain: int = 3,
+    series_uids: Union[str, List[str]] = None,
 ) -> List[List[np.ndarray]]:
     """
     Args:
@@ -26,6 +27,9 @@ def visualize_attentions(
 
     if isinstance(series, Serie):
         series = [series]
+
+    if isinstance(series_uids, str):
+        series_uids = [series_uids]
 
     series_overlays = []
     for serie_idx, serie in enumerate(series):
@@ -64,8 +68,16 @@ def visualize_attentions(
             overlayed_images.append(np.uint8(overlayed))
 
         if save_directory is not None:
-            save_path = os.path.join(save_directory, f"serie_{serie_idx}")
-            save_images(overlayed_images, save_path, f"serie_{serie_idx}")
+            if series_uids is not None:
+                # save_path = os.path.join(
+                #     save_directory, f"serie_{series_uids[serie_idx]}"
+                # )
+                save_images(
+                    overlayed_images, save_directory, f"serie_{series_uids[serie_idx]}"
+                )
+            else:
+                # save_path = os.path.join(save_directory, f"serie_{serie_idx}")
+                save_images(overlayed_images, save_directory, f"serie_{serie_idx}")
 
         series_overlays.append(overlayed_images)
     return series_overlays
