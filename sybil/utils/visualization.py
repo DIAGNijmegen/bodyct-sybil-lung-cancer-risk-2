@@ -57,8 +57,8 @@ def visualize_attentions(
         overlayed_images = []
         for i in range(N):
             overlayed = np.zeros((512, 512, 3))
-            overlayed[..., 2] = images[i]
-            overlayed[..., 1] = images[i]
+            overlayed[..., 2] = np.zeros_like(images[i])
+            overlayed[..., 1] = np.zeros_like(images[i])
             overlayed[..., 0] = np.clip(
                 (attention_up[0, 0, i] * gain * 256) + images[i],
                 a_min=0,
@@ -96,5 +96,5 @@ def save_images(img_list: List[np.ndarray], directory: str, name: str):
         None
     """
     os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, f"{name}.gif")
+    path = os.path.join(directory, f"{name}.mha")
     imageio.mimsave(path, img_list)

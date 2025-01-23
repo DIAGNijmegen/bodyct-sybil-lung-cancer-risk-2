@@ -11,8 +11,8 @@ from sybil import visualize_attentions
 EXPERIMENT_DIR = r"/data/bodyct/experiments/lung-malignancy-fairness-shaurya"
 
 # Name of CSV file with series instance UIDs to extract
-csv_input = rf"{EXPERIMENT_DIR}/nlst/sybil_fp_brock_top50.csv"
-INFERENCE_DIR = rf"{EXPERIMENT_DIR}/nlst/sybil_attentions_fp"
+csv_input = rf"{EXPERIMENT_DIR}/nlst/sybil_fn_brock_top25.csv"
+INFERENCE_DIR = rf"{EXPERIMENT_DIR}/nlst/sybil_attentions"
 
 os.makedirs(INFERENCE_DIR, exist_ok=True)
 ParentDirectory = rf"{EXPERIMENT_DIR}/nlst/DICOM_files"
@@ -182,7 +182,7 @@ for i, subfolder in enumerate(subfolders):
         series_with_attention = visualize_attentions(
             serie,
             attentions=attentions,
-            save_directory=rf"{INFERENCE_DIR}/attention_gifs/",
+            save_directory=rf"{INFERENCE_DIR}/attention_overlays/",
             gain=3,
             series_uids=str(os.path.basename(subfolder)),
         )
