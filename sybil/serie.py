@@ -13,6 +13,10 @@ from sybil.datasets.utils import order_slices, VOXEL_SPACING
 from sybil.utils.loading import get_sample_loader
 
 
+# torch.manual_seed(42)
+seed = 42
+
+
 class Meta(NamedTuple):
     paths: list
     thickness: float
@@ -37,6 +41,7 @@ class Serie:
         voxel_spacing: Optional[List[float]] = None,
         label: Optional[int] = None,
         censor_time: Optional[int] = None,
+        seed = seed,
         file_type: Literal["png", "dicom","mha"] = "mha",
         split: Literal["train", "dev", "test"] = "test",
     ):
@@ -65,7 +70,8 @@ class Serie:
             raise ValueError("censor_time should also provided with label.")
         if file_type == "png" and voxel_spacing is None:
             raise ValueError("voxel_spacing should be provided for PNG files.")
-
+        self.seed = seed
+        torch.manual_seed(seed)
         self._censor_time = censor_time
         self.file_type = file_type
         self.mha3d = mha3d
@@ -183,7 +189,7 @@ class Serie:
         torch.Tensor
             CT volume of shape (1, C, N, H, W)
         """
-        sample = {"seed": np.random.randint(0, 2**32 - 1)} #?
+        sample = {"seed": 1} #?
         if self.file_type == 'mha':
             # mha 3d
             if self.mha3d:
