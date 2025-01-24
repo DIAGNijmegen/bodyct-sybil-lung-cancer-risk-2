@@ -77,7 +77,7 @@ def get_dcm_filepaths(folder_path):
     return dcm_filepaths
 
 
-seriesids = get_series_instance_uids(csv_input)
+seriesids = get_series_instance_uids(csv_input, n=1)
 subfolders = get_subfolder_paths(ParentDirectory, seriesids)
 print(f"Examining {len(subfolders)} subfolders")
 
@@ -182,7 +182,7 @@ for i, subfolder in enumerate(subfolders):
         series_with_attention = visualize_attentions(
             serie,
             attentions=attentions,
-            save_directory=rf"{INFERENCE_DIR}/attention_overlays/",
+            save_directory=rf"{INFERENCE_DIR}/overlay_gif/",
             gain=3,
             series_uids=str(os.path.basename(subfolder)),
         )
