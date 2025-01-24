@@ -1,10 +1,9 @@
 from sybil.loaders.abstract_loader import abstract_loader
 import cv2
-import torch
 import pydicom
 from pydicom.pixel_data_handlers.util import apply_modality_lut
 import numpy as np
-
+import SimpleITK as sitk
 LOADING_ERROR = "LOADING ERROR! {}"
 
 
@@ -20,6 +19,29 @@ class OpenCVLoader(abstract_loader):
     def cached_extension(self):
         return ".png"
 
+class SimpleITKLoader(abstract_loader):
+    # mha 3d
+    def load_input3d(self, image):
+        """
+        Loads MHA file as grayscale image
+        """
+        # image = sitk.ReadImage(path)
+        ar = sitk.GetArrayFromImage(image).astype(np.float64)
+        arr = apply_windowing(ar, -600, 1500)
+        arr = arr//256
+        return {"input": arr}
+
+    def load_input(self, path):
+        """
+        Loads MHA file as grayscale image
+        """
+        image = sitk.ReadImage(path)
+        array = sitk.GetArrayFromImage(image)
+        return {"input": array}
+
+    @property
+    def cached_extension(self):
+        return ".mha"
 
 class DicomLoader(abstract_loader):
     def __init__(self, cache_path, augmentations, args, apply_augmentations=True):
@@ -29,10 +51,14 @@ class DicomLoader(abstract_loader):
 
     def load_input(self, path):
         try:
+            # image = sitk.ReadImage(path)
+            # dcm = sitk.GetArrayFromImage(image)
+            
             dcm = pydicom.dcmread(path)
             dcm = apply_modality_lut(dcm.pixel_array, dcm)
             arr = apply_windowing(dcm, self.window_center, self.window_width)
             arr = arr//256  # parity with images loaded as 8 bit
+            
         except Exception:
             raise Exception(LOADING_ERROR.format("COULD NOT LOAD DICOM."))
         return {"input": arr}
