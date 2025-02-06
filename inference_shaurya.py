@@ -11,8 +11,8 @@ from sybil import visualize_attentions
 EXPERIMENT_DIR = r"/data/bodyct/experiments/lung-malignancy-fairness-shaurya"
 
 # Name of CSV file with series instance UIDs to extract
-csv_input = rf"{EXPERIMENT_DIR}/nlst/sybil_fn_brock_top25.csv"
-INFERENCE_DIR = rf"{EXPERIMENT_DIR}/nlst/sybil_attentions"
+csv_input = rf"{EXPERIMENT_DIR}/nlst/sybil_tp_train_top25.csv"
+INFERENCE_DIR = rf"{EXPERIMENT_DIR}/nlst/sybil_attentions_tp_train"
 
 os.makedirs(INFERENCE_DIR, exist_ok=True)
 ParentDirectory = rf"{EXPERIMENT_DIR}/nlst/DICOM_files"
@@ -77,7 +77,7 @@ def get_dcm_filepaths(folder_path):
     return dcm_filepaths
 
 
-seriesids = get_series_instance_uids(csv_input, n=1)
+seriesids = get_series_instance_uids(csv_input)
 subfolders = get_subfolder_paths(ParentDirectory, seriesids)
 print(f"Examining {len(subfolders)} subfolders")
 
@@ -182,7 +182,7 @@ for i, subfolder in enumerate(subfolders):
         series_with_attention = visualize_attentions(
             serie,
             attentions=attentions,
-            save_directory=rf"{INFERENCE_DIR}/overlay_gif/",
+            save_directory=rf"{INFERENCE_DIR}/attention_gifs/",
             gain=3,
             series_uids=str(os.path.basename(subfolder)),
         )
@@ -197,35 +197,5 @@ for i, subfolder in enumerate(subfolders):
 
 end_time_model = time.time()
 print(f"Time taken for inference: {end_time_model - start_time_model} seconds")
-
-# def split_gif_to_frames(gif_path, output_folder):
-#     if not os.path.exists(output_folder):
-#         os.makedirs(output_folder)
-
-#     with Image.open(gif_path) as gif:
-#         frame_count = gif.n_frames
-#         print(f"Total frames: {frame_count}")
-
-#         for frame in range(frame_count):
-#             gif.seek(frame)
-#             frame_filename = os.path.join(output_folder, f"frame_{frame:03d}.png")
-#             gif.save(frame_filename, format="PNG")
-
-
-# print(f"Splitting gifs into frames")
-# os.makedirs(rf"{EXPERIMENT_DIR}/nlst/sybil_attentions_black/attention_imgs")
-# gif_subfolders = os.listdir(
-#     rf"{EXPERIMENT_DIR}/nlst/sybil_attentions_black/attention_gifs"
-# )
-
-# for i, sub in enumerate(gif_subfolders):
-#     gif_path = (
-#         f"{EXPERIMENT_DIR}/nlst/sybil_attentions_black/attention_gifs/{sub}/{sub}.gif"
-#     )
-#     output_folder = f"{EXPERIMENT_DIR}/nlst/sybil_attentions_black/attention_imgs/{sub}"
-#     print(f"{i+1} / {len(gif_subfolders)}: converting {sub} ...")
-#     split_gif_to_frames(gif_path, output_folder)
-
-# print("Splitting gifs into frames complete!")
 
 save_data_as_csv(data_dict, csvoutput2)
