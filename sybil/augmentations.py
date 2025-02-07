@@ -18,7 +18,7 @@ def get_augmentations(split: Literal["train", "dev", "test"], args):
     if split == "train":
         augmentations = [
             Scale_2d(args, {}),
-            Rotate_Range(args, {"deg": 20}),
+            Rotate_Range(args, {"deg": 20},sample={'seed':42}),
             ToTensor(),
             Force_Num_Chan_Tensor_2d(args, {}),
             Normalize_Tensor_2d(args, {}),
