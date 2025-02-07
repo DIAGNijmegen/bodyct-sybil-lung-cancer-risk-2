@@ -5,6 +5,7 @@ from typing import NamedTuple, Union, Dict, List, Optional, Tuple
 from urllib.request import urlopen
 from zipfile import ZipFile
 
+
 import torch
 import numpy as np
 
@@ -13,7 +14,6 @@ from sybil.models.sybil import SybilNet
 from sybil.models.calibrator import SimpleClassifierGroup
 from sybil.utils.logging_utils import get_logger
 from sybil.utils.device_utils import get_default_device, get_most_free_gpu, get_device_mem_info
-
 
 # Leaving this here for a bit; these are IDs to download the models from Google Drive
 NAME_TO_FILE = {
@@ -354,9 +354,9 @@ class Sybil:
             for i in range(len(series)):
                 att = {}
                 for key in attention_keys:
-                    att[key] = np.stack([
-                        attentions_[j][i][key] for j in range(len(self.ensemble))
-                    ])
+                    att[key] = np.stack(
+                        [attentions_[j][i][key] for j in range(len(self.ensemble))]
+                    )
                 attentions.append(att)
 
         return Prediction(scores=calib_scores, attentions=attentions)
