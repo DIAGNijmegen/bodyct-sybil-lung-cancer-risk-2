@@ -5,15 +5,15 @@ from typing import NamedTuple, Union, Dict, List, Optional, Tuple
 from urllib.request import urlopen
 from zipfile import ZipFile
 
-# import gdown
 
 import torch
 import numpy as np
-import pickle
 
 from sybil.serie import Serie
 from sybil.models.sybil import SybilNet
-from sybil.utils.metrics import get_survival_metrics
+from sybil.models.calibrator import SimpleClassifierGroup
+from sybil.utils.logging_utils import get_logger
+from sybil.utils.device_utils import get_default_device, get_most_free_gpu, get_device_mem_info
 
 # Leaving this here for a bit; these are IDs to download the models from Google Drive
 NAME_TO_FILE = {
@@ -66,7 +66,7 @@ NAME_TO_FILE = {
     },
 }
 
-CHECKPOINT_URL = "https://github.com/reginabarzilaygroup/Sybil/releases/download/v1.0.3/sybil_checkpoints.zip"
+CHECKPOINT_URL = os.getenv("SYBIL_CHECKPOINT_URL", "https://github.com/reginabarzilaygroup/Sybil/releases/download/v1.5.0/sybil_checkpoints.zip")
 
 
 class Prediction(NamedTuple):
@@ -81,49 +81,6 @@ class Evaluation(NamedTuple):
     attentions: List[Dict[str, np.ndarray]] = None
 
 
-def download_sybil_gdrive(name, cache):
-    """Download trained models and calibrator from Google Drive
-
-    Parameters
-    ----------
-    name (str): name of model to use. A key in NAME_TO_FILE
-    cache (str): path to directory where files are downloaded
-
-    Returns
-    -------
-        download_model_paths (list): paths to .ckpt models
-        download_calib_path (str): path to calibrator
-    """
-    # Create cache folder if not exists
-    cache = os.path.expanduser(cache)
-    os.makedirs(cache, exist_ok=True)
-
-    # Download if neded
-    model_files = NAME_TO_FILE[name]
-
-    # Download models
-    download_model_paths = []
-    for model_name, google_id in zip(
-        model_files["checkpoint"], model_files["google_checkpoint_id"]
-    ):
-        model_path = os.path.join(cache, f"{model_name}.ckpt")
-        if not os.path.exists(model_path):
-            print(f"Downloading model to {cache}")
-            gdown.download(id=google_id, output=model_path, quiet=False)
-        download_model_paths.append(model_path)
-
-    # download calibrator
-    download_calib_path = os.path.join(cache, f"{name}.p")
-    if not os.path.exists(download_calib_path):
-        gdown.download(
-            id=model_files["google_calibrator_id"],
-            output=download_calib_path,
-            quiet=False,
-        )
-
-    return download_model_paths, download_calib_path
-
-
 def download_sybil(name, cache) -> Tuple[List[str], str]:
     """Download trained models and calibrator"""
     # Create cache folder if not exists
@@ -133,7 +90,7 @@ def download_sybil(name, cache) -> Tuple[List[str], str]:
     # Download models
     model_files = NAME_TO_FILE[name]
     checkpoints = model_files["checkpoint"]
-    download_calib_path = os.path.join(cache, f"{name}.p")
+    download_calib_path = os.path.join(cache, f"{name}_simple_calibrator.json")
     have_all_files = os.path.exists(download_calib_path)
 
     download_model_paths = []
@@ -149,13 +106,29 @@ def download_sybil(name, cache) -> Tuple[List[str], str]:
     return download_model_paths, download_calib_path
 
 
-def download_and_extract(remote_model_url: str, local_model_dir) -> List[str]:
-    resp = urlopen(remote_model_url)
-    os.makedirs(local_model_dir, exist_ok=True)
+def download_and_extract(remote_url: str, local_dir: str) -> List[str]:
+    os.makedirs(local_dir, exist_ok=True)
+    resp = urlopen(remote_url)
     with ZipFile(BytesIO(resp.read())) as zip_file:
         all_files_and_dirs = zip_file.namelist()
-        zip_file.extractall(local_model_dir)
+        zip_file.extractall(local_dir)
     return all_files_and_dirs
+
+
+def _torch_set_num_threads(threads) -> int:
+    """
+    Set the number of CPU threads for torch to use.
+    Set to a negative number for no-op.
+    Set to 0 for the number of CPUs.
+    """
+    if threads < 0:
+        return torch.get_num_threads()
+    if threads is None or threads == 0:
+        # I've never seen a benefit to going higher than 8 and sometimes there is a big slowdown
+        threads = min(8, os.cpu_count())
+
+    torch.set_num_threads(threads)
+    return torch.get_num_threads()
 
 
 class Sybil:
@@ -179,9 +152,10 @@ class Sybil:
             Path to calibrator pickle file corresponding with model
         device: str
             If provided, will run inference using this device.
-            By default uses GPU, if available.
+            By default, uses GPU with the most free memory, if available.
 
         """
+        self._logger = get_logger()
         # Download if needed
         if isinstance(name_or_path, str) and (name_or_path in NAME_TO_FILE):
             name_or_path, calibrator_path = download_sybil(name_or_path, cache)
@@ -197,18 +171,23 @@ class Sybil:
         if (calibrator_path is not None) and (not os.path.exists(calibrator_path)):
             raise ValueError(f"Path not found for calibrator {calibrator_path}")
 
-        # Set device
+        # Set device.
+        # If set manually, use it and stay there.
+        # Otherwise, pick the most free GPU now and at predict time.
+        self._device_flexible = True
         if device is not None:
             self.device = device
+            self._device_flexible = False
         else:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.device = get_default_device()
 
         self.ensemble = torch.nn.ModuleList()
         for path in name_or_path:
             self.ensemble.append(self.load_model(path))
+        self.to(self.device)
 
         if calibrator_path is not None:
-            self.calibrator = pickle.load(open(calibrator_path, "rb"))
+            self.calibrator = SimpleClassifierGroup.from_json_grouped(calibrator_path)
         else:
             self.calibrator = None
 
@@ -235,12 +214,12 @@ class Sybil:
         # Remove model from param names
         state_dict = {k[6:]: v for k, v in checkpoint["state_dict"].items()}
         model.load_state_dict(state_dict)  # type: ignore
-        if self.device == "cuda":
-            model.to("cuda")
+        if self.device is not None:
+            model.to(self.device)
 
         # Set eval
         model.eval()
-        print(f"Loaded model from {path}")
+        self._logger.info(f"Loaded model from {path}")
         return model
 
     def _calibrate(self, scores: np.ndarray) -> np.ndarray:
@@ -248,8 +227,6 @@ class Sybil:
 
         Parameters
         ----------
-        calibrator: Optional[dict]
-            Dictionary of sklearn.calibration.CalibratedClassifierCV for each year, otherwise None.
         scores: np.ndarray
             risk scores as numpy array
 
@@ -263,9 +240,7 @@ class Sybil:
         calibrated_scores = []
         for YEAR in range(scores.shape[1]):
             probs = scores[:, YEAR].reshape(-1, 1)
-            probs = self.calibrator["Year{}".format(YEAR + 1)].predict_proba(probs)[
-                :, 1
-            ]
+            probs = self.calibrator["Year{}".format(YEAR + 1)].predict_proba(probs)[:, -1]
             calibrated_scores.append(probs)
 
         return np.stack(calibrated_scores, axis=1)
@@ -305,8 +280,8 @@ class Sybil:
                 raise ValueError("Expected a list of Serie objects.")
 
             volume = serie.get_volume()
-            if self.device == "cuda":
-                volume = volume.cuda()
+            if self.device is not None:
+                volume = volume.to(self.device)
 
             with torch.no_grad():
                 out = model(volume)
@@ -321,13 +296,16 @@ class Sybil:
                             "volume_attention_1": out["volume_attention_1"]
                             .detach()
                             .cpu(),
+                            "hidden": out["hidden"]
+                            .detach()
+                            .cpu(),
                         }
                     )
 
         return Prediction(scores=scores, attentions=attentions)
 
     def predict(
-        self, series: Union[Serie, List[Serie]], return_attentions: bool = False
+        self, series: Union[Serie, List[Serie]], return_attentions: bool = False, threads=0,
     ) -> Prediction:
         """Run predictions over the given serie(s) and ensemble
 
@@ -337,6 +315,8 @@ class Sybil:
             One or multiple series to run predictions for.
         return_attentions : bool
             If True, returns attention scores for each serie. See README for details.
+        threads : int
+            Number of CPU threads to use for PyTorch inference.
 
         Returns
         -------
@@ -344,6 +324,16 @@ class Sybil:
             Output prediction. See details for :class:`~sybil.model.Prediction`".
 
         """
+
+        # Set CPU threads available to torch
+        num_threads = _torch_set_num_threads(threads)
+        self._logger.debug(f"Using {num_threads} threads for PyTorch inference")
+
+        if self._device_flexible:
+            self.device = self._pick_device()
+            self.to(self.device)
+        self._logger.debug(f"Beginning prediction on device: {self.device}")
+
         scores = []
         attentions_ = [] if return_attentions else None
         attention_keys = None
@@ -389,6 +379,7 @@ class Sybil:
             Output evaluation. See details for :class:`~sybil.model.Evaluation`.
 
         """
+        from sybil.utils.metrics import get_survival_metrics
         if isinstance(series, Serie):
             series = [series]
         elif not isinstance(series, list):
@@ -418,6 +409,40 @@ class Sybil:
         auc = [float(out[f"{i + 1}_year_auc"]) for i in range(self._max_followup)]
         c_index = float(out["c_index"])
 
-        return Evaluation(
-            auc=auc, c_index=c_index, scores=scores, attentions=predictions.attentions
-        )
+        return Evaluation(auc=auc, c_index=c_index, scores=scores, attentions=predictions.attentions)
+
+    def to(self, device: str):
+        """Move model to device.
+
+        Parameters
+        ----------
+        device : str
+            Device to move model to.
+        """
+        self.device = device
+        self.ensemble.to(device)
+
+    def _pick_device(self):
+        """
+        Pick the device to run inference on.
+        This is based on the device with the most free memory, with a preference for remaining
+        on the current device.
+
+        Motivation is to enable multiprocessing without the processes needed to communicate.
+        """
+        if not torch.cuda.is_available():
+            return get_default_device()
+
+        # Get size of the model in memory (approximate)
+        model_mem = 9*sum(p.numel() * p.element_size() for p in self.ensemble.parameters())
+
+        # Check memory available on current device.
+        # If it seems like we're the only thing on this GPU, stay.
+        free_mem, total_mem = get_device_mem_info(self.device)
+        cur_allocated = total_mem - free_mem
+        min_to_move = int(1.01 * model_mem)
+        if cur_allocated < min_to_move:
+            return self.device
+        else:
+            # Otherwise, get the most free GPU
+            return get_most_free_gpu()
